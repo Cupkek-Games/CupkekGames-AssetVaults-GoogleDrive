@@ -1,0 +1,19 @@
+{
+    "name": "CupkekGames.AssetVaults.GoogleDrive",
+    "rootNamespace": "CupkekGames.AssetVaults.GoogleDrive",
+    "references": [
+        "CupkekGames.AssetVaults",
+        "CupkekGames.AssetVaults.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
