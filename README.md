@@ -2,7 +2,7 @@
 
 Google Drive storage for [`com.cupkekgames.assetvaults`](../com.cupkekgames.assetvaults), over rclone.
 
-Install it alongside the vault and a **Google Drive** row appears in **Tools > Asset Vault**. Nothing else changes: this package implements `IVaultBackend` and registers itself, and the vault window never learns that Drive exists.
+Install it alongside the vault and a **Google Drive** row appears in **Tools > CupkekGames > Asset Vault**. Nothing else changes: this package implements `IVaultBackend` and registers itself, and the vault window never learns that Drive exists.
 
 ## Setup, once
 
