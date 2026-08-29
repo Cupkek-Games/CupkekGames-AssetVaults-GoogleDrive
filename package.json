@@ -17,6 +17,6 @@
     "CupkekGames"
   ],
   "dependencies": {
-    "com.cupkekgames.assetvaults": "0.1.0"
+    "com.cupkekgames.assetvaults": "0.4.0"
   }
 }
