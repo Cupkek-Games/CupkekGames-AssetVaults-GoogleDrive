@@ -26,6 +26,9 @@ namespace CupkekGames.AssetVaults.GoogleDrive
     [NonSerialized] private Outcome _outcome = Outcome.None;
     [NonSerialized] private bool _busy;
     [NonSerialized] private bool _pumping;
+    // Set while a sign-in is waiting on the browser, so the page can be reopened
+    // by hand when the automatic tab never showed.
+    [NonSerialized] private string _signInUrl;
 
     private static string ProjectRoot => Directory.GetParent(Application.dataPath).FullName;
 
@@ -110,7 +113,25 @@ namespace CupkekGames.AssetVaults.GoogleDrive
             {
               TestConnection(settings);
             }
+
+            if (GUILayout.Button(new GUIContent("Open in Drive",
+                  "Open the vault folder in the Google Drive web UI."),
+                  GUILayout.Height(24), GUILayout.Width(110)))
+            {
+              OpenInDrive(settings);
+            }
           }
+        }
+      }
+
+      if (_busy && !string.IsNullOrEmpty(_signInUrl))
+      {
+        if (GUILayout.Button(new GUIContent("Open the sign-in page again",
+              "The browser should have opened this by itself. If no tab appeared, or it "
+              + "is blank, this opens the same page in the default browser; the link is "
+              + "also in the console for pasting into another browser.")))
+        {
+          Application.OpenURL(_signInUrl);
         }
       }
 
@@ -225,7 +246,7 @@ namespace CupkekGames.AssetVaults.GoogleDrive
       try
       {
         var backend = new GoogleDriveBackend(settings, ProjectRoot);
-        await backend.AuthorizeAsync(CancellationToken.None);
+        await backend.AuthorizeAsync(url => _signInUrl = url, CancellationToken.None);
         Set(Outcome.Success,
           "Signed in. The token is saved to UserSettings/ on this machine only.\n"
           + "Next: press Test connection.");
@@ -234,6 +255,40 @@ namespace CupkekGames.AssetVaults.GoogleDrive
       catch (Exception e)
       {
         Set(Outcome.Failure, "Authorisation failed:\n" + e.Message);
+        Debug.LogError("[AssetVault] " + e);
+      }
+      finally
+      {
+        _busy = false;
+        _signInUrl = null;
+        StopPump();
+        Repaint();
+      }
+    }
+
+    private async void OpenInDrive(GoogleDriveSettings settings)
+    {
+      _busy = true;
+      StartPump();
+      Set(Outcome.Working, "Finding '" + settings.RemoteFolder + "' on Drive...");
+      try
+      {
+        var backend = new GoogleDriveBackend(settings, ProjectRoot);
+        string url = await backend.GetWebUrlAsync(CancellationToken.None);
+        if (url == null)
+        {
+          Set(Outcome.Failure,
+            $"'{settings.RemoteFolder}' does not exist on Drive yet; the first upload creates it.");
+        }
+        else
+        {
+          Application.OpenURL(url);
+          Set(Outcome.Success, "Opened in the browser:\n" + url);
+        }
+      }
+      catch (Exception e)
+      {
+        Set(Outcome.Failure, "Could not find the folder:\n" + e.Message);
         Debug.LogError("[AssetVault] " + e);
       }
       finally

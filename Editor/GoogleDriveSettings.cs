@@ -39,10 +39,12 @@ namespace CupkekGames.AssetVaults.GoogleDrive
 
     [Header("Scope")]
     [Tooltip("Drive = full access; lets you manage the vault folder by hand in the Drive web " +
-             "UI. Cost: 'drive' is a RESTRICTED scope, so while the OAuth consent screen stays " +
-             "in Testing status Google expires the refresh token every 7 days. " +
-             "DriveFile = only files this app created: not restricted, so no verification and " +
-             "no 7-day expiry, but rclone cannot then see anything you upload manually.")]
+             "UI. Cost: 'drive' is a RESTRICTED scope, so a production consent screen shows " +
+             "Google's 'unverified app' warning on sign-in. " +
+             "DriveFile = only files this app created: not restricted, so no warning, but " +
+             "rclone cannot then see anything you upload manually. " +
+             "Neither scope avoids the 7-day refresh-token expiry of a Testing-status consent " +
+             "screen; publishing the consent screen does.")]
     [SerializeField] private DriveScope _scope = DriveScope.Drive;
 
     [Header("Transfer")]
@@ -59,8 +61,10 @@ namespace CupkekGames.AssetVaults.GoogleDrive
     /// rclone's scope values. Defaults to <see cref="Drive"/> at the owner's
     /// choice (2026-08-28): full access keeps the vault folder manageable by hand
     /// in the Drive web UI. <see cref="DriveFile"/> stays available because it is
-    /// not a restricted scope, which is the way out of the 7-day refresh-token
-    /// expiry that Testing-status apps get.
+    /// not a restricted scope, so a published consent screen needs no verification
+    /// and shows no warning. Neither scope escapes the 7-day refresh-token expiry
+    /// of a Testing-status consent screen (learned 2026-09-07: the first token
+    /// died on day 10); only publishing the consent screen does.
     /// </summary>
     public enum DriveScope
     {

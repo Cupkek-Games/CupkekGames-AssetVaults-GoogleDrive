@@ -13,19 +13,25 @@ Install it alongside the vault and a **Google Drive** row appears in **Tools > C
 
 If Google answers `access_denied`, add your account under **OAuth consent screen → Test users**.
 
+If no browser tab appears, or the `127.0.0.1:53682` page stays blank: the link is printed to the console the moment rclone starts listening, and the inspector shows **Open the sign-in page again** while it waits. Paste the link into another browser if the default one will not render it. The listener lives for 10 minutes per attempt; a link from an earlier attempt is dead, so press Authorize again rather than reloading an old tab.
+
+**Open in Drive** (inspector, and the vault window's connection row) opens the vault folder in the Drive web UI. The folder is created by the first upload, so before that there is nothing to open.
+
 ## Where the secrets go
 
 - **Client id and secret** live in the settings asset and are committed. RFC 8252 treats a desktop-app client secret as non-confidential, because it cannot be kept secret inside a distributed application, and Google issues them for exactly this flow. Rotate the client before making a repository public.
 - **The refresh token does not.** That one grants access to your Drive, so it is written to `UserSettings/AssetVault.GoogleDrive.json`, which Unity's standard `.gitignore` already excludes. This is the single place Unity Localization is a bad model to copy: it keeps credentials in the asset and people commit them.
 
-## Scope, and the 7-day token
+## The 7-day token, and scope
 
-The settings asset picks between two Drive scopes, and the trade is real:
+While the OAuth consent screen is in **Testing** status, Google expires every refresh token after 7 days, whatever scope it carries (only name/email/profile-only apps are exempt). Transfers then fail with `invalid_grant`, which the backend reports as "Google sign-in has expired"; press **Re-authorize** and you are back. To stop it recurring, set **OAuth consent screen → Publishing status → In production**. That is the only fix; changing scope does not remove the expiry.
+
+Scope decides what publishing costs you:
 
 | Scope | You get | You pay |
 |---|---|---|
-| `drive` (default) | Full access, so you can manage the vault folder by hand in the Drive web UI | It is a **restricted** scope, so while the consent screen stays in Testing status Google expires the refresh token every 7 days |
-| `drive.file` | Only files this app created — not restricted, so no verification and no expiry | rclone cannot see anything you upload manually |
+| `drive` (default) | Full access, so you can manage the vault folder by hand in the Drive web UI | It is a **restricted** scope: an unverified production app shows Google's "unverified app" warning on sign-in, which you click through under Advanced |
+| `drive.file` | Only files this app created; not restricted, so production needs no verification and shows no warning | rclone cannot see anything you upload manually |
 
 ## Why rclone
 

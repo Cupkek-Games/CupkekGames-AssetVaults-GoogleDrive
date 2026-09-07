@@ -151,6 +151,10 @@ namespace CupkekGames.AssetVaults.GoogleDrive
         // a failure made a perfectly good connection look like one.
         return new List<RemoteObject>();
       }
+      catch (VaultException e)
+      {
+        throw Translate(e);
+      }
 
       var results = new List<RemoteObject>();
       foreach (string raw in output.Split('\n'))
@@ -177,8 +181,7 @@ namespace CupkekGames.AssetVaults.GoogleDrive
 
       var args = new List<string> { "copyto", Remote(remoteName), localFile };
       args.AddRange(CommonArgs());
-      await RcloneProcess.RunAsync(Exe(), args, progress, null, ct, ConfigEnvironment())
-        .ConfigureAwait(false);
+      await Transfer(args, progress, ct).ConfigureAwait(false);
     }
 
     public async Task UploadAsync(string localFile, string remoteName,
@@ -191,8 +194,110 @@ namespace CupkekGames.AssetVaults.GoogleDrive
 
       var args = new List<string> { "copyto", localFile, Remote(remoteName) };
       args.AddRange(CommonArgs());
-      await RcloneProcess.RunAsync(Exe(), args, progress, null, ct, ConfigEnvironment())
-        .ConfigureAwait(false);
+      await Transfer(args, progress, ct).ConfigureAwait(false);
+    }
+
+    private async Task Transfer(List<string> args, IProgress<TransferProgress> progress,
+      CancellationToken ct)
+    {
+      try
+      {
+        await RcloneProcess.RunAsync(Exe(), args, progress, null, ct, ConfigEnvironment())
+          .ConfigureAwait(false);
+      }
+      catch (VaultException e)
+      {
+        throw Translate(e);
+      }
+    }
+
+    /// <summary>
+    /// rclone reports Google's failures verbatim, and the one that recurs reads
+    /// like a machine fault: <c>invalid_grant</c> on a refresh means Google has
+    /// revoked the refresh token. That is routine for an OAuth consent screen
+    /// left in Testing status, which expires every refresh token after 7 days
+    /// no matter which scope it carries. Name the fix, not the fault.
+    /// </summary>
+    private static VaultException Translate(VaultException e)
+    {
+      if (e.Message.Contains("invalid_grant"))
+      {
+        return new VaultException(
+          "Google sign-in has expired. Press Re-authorize in the vault settings (Set up). "
+          + "This repeats every 7 days while the OAuth consent screen is in Testing status; "
+          + "publish it (OAuth consent screen > Publishing status > In production) to stop that.",
+          e);
+      }
+
+      return e;
+    }
+
+    // Folder ids never change for the life of a folder, so one lookup per backend
+    // instance is plenty: the window keeps one backend per reload, the inspector
+    // makes a fresh one per click. Not static on purpose - a static cache would
+    // owe the lifecycle analyzer an answer, and this is derived state anyway.
+    private string _folderId;
+
+    /// <summary>
+    /// The vault folder in the Drive web UI. rclone's <c>lsf</c> can print each
+    /// entry's Drive id (<c>--format i</c>), so the parent is listed once and the
+    /// folder's id is picked out of it; Drive's folder URL is just that id.
+    /// </summary>
+    public async Task<string> GetWebUrlAsync(CancellationToken ct)
+    {
+      if (_folderId == null)
+      {
+        _folderId = await LookUpFolderIdAsync(ct).ConfigureAwait(false);
+        if (_folderId == null)
+        {
+          return null;
+        }
+      }
+
+      return "https://drive.google.com/drive/folders/" + _folderId;
+    }
+
+    private async Task<string> LookUpFolderIdAsync(CancellationToken ct)
+    {
+      // RemoteFolder may be nested ("Backups/Vault"): list the parent, match the leaf.
+      string folder = _settings.RemoteFolder;
+      int slash = folder.LastIndexOf('/');
+      string parent = slash < 0 ? string.Empty : folder.Substring(0, slash);
+      string leaf = slash < 0 ? folder : folder.Substring(slash + 1);
+
+      var args = new List<string>
+      {
+        "lsf", RemoteName + ":" + parent, "--dirs-only", "--format", "pi", "--separator", "|",
+      };
+      string output;
+      try
+      {
+        output = await RcloneProcess.CaptureAsync(Exe(), args, ct, ConfigEnvironment())
+          .ConfigureAwait(false);
+      }
+      catch (VaultException e) when (e.Message.Contains("directory not found"))
+      {
+        return null;
+      }
+      catch (VaultException e)
+      {
+        throw Translate(e);
+      }
+
+      foreach (string raw in output.Split('\n'))
+      {
+        string line = raw.Trim();
+        if (line.Length == 0) continue;
+        string[] parts = line.Split('|');
+        if (parts.Length < 2) continue;
+        // lsf marks directories with a trailing slash.
+        if (parts[0].TrimEnd('/') == leaf && parts[1].Length > 0)
+        {
+          return parts[1];
+        }
+      }
+
+      return null;
     }
 
     /// <summary>
@@ -202,6 +307,17 @@ namespace CupkekGames.AssetVaults.GoogleDrive
     /// the result.
     /// </summary>
     public async Task<string> AuthorizeAsync(CancellationToken ct)
+      => await AuthorizeAsync(null, ct).ConfigureAwait(false);
+
+    private const int SignInTimeoutMinutes = 10;
+
+    /// <param name="onSignInUrl">
+    /// Receives the sign-in link the moment rclone prints it, while its listener is
+    /// still alive. Before this existed the link was only visible in the failure
+    /// text, i.e. after the listener had already gone, so "open it by hand" was
+    /// never an option when the browser did not come up.
+    /// </param>
+    public async Task<string> AuthorizeAsync(Action<string> onSignInUrl, CancellationToken ct)
     {
       if (!_settings.HasClient)
       {
@@ -229,14 +345,34 @@ namespace CupkekGames.AssetVaults.GoogleDrive
 
       // rclone waits for the browser callback indefinitely. Without a deadline a
       // refused or abandoned consent hangs the process for the rest of the
-      // session, which is exactly how the port got stuck.
-      using (var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3)))
+      // session, which is exactly how the port got stuck. Ten minutes: the old
+      // three ran out on a tab that opened behind other windows, and the user
+      // then found a dead listener and a blank page.
+      using (var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(SignInTimeoutMinutes)))
       using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token))
       {
-        string output;
+        var output = new System.Text.StringBuilder();
+        bool announced = false;
+        // The link rclone opens; only this page redirects on to Google.
+        string signInUrlPrefix = "http://127.0.0.1:" + RcloneProcess.AuthPort + "/auth?state=";
+        void OnLine(string line)
+        {
+          output.AppendLine(line);
+          if (announced) return;
+          int at = line.IndexOf(signInUrlPrefix, StringComparison.Ordinal);
+          if (at < 0) return;
+          announced = true;
+          string url = line.Substring(at).Trim();
+          UnityEngine.Debug.Log(
+            "[AssetVault] Google sign-in page: " + url
+            + "\nIf no browser tab appeared, open that link yourself within "
+            + $"{SignInTimeoutMinutes} minutes.");
+          onSignInUrl?.Invoke(url);
+        }
+
         try
         {
-          output = await RcloneProcess.CaptureAsync(Exe(), args, linked.Token)
+          await RcloneProcess.RunAsync(Exe(), args, null, OnLine, linked.Token)
             .ConfigureAwait(false);
         }
         catch (VaultException e) when (e.Message.Contains("bind"))
@@ -245,16 +381,23 @@ namespace CupkekGames.AssetVaults.GoogleDrive
             $"Port {RcloneProcess.AuthPort} is still in use, so the sign-in server could not "
             + "start. Another rclone is holding it; close it and try again.", e);
         }
+        catch (VaultException e) when (e.Message.Contains("state doesn't match")
+                                       || e.Message.Contains("State did not match"))
+        {
+          throw new VaultException(
+            "The browser page belonged to an earlier sign-in attempt, so Google's answer "
+            + "was refused. Press Re-authorize again and use the tab it opens this time.", e);
+        }
 
         if (timeout.IsCancellationRequested)
         {
           throw new VaultException(
-            "Sign-in timed out after 3 minutes. If the Google page showed "
-            + "\"access_denied\", add your account under OAuth consent screen > Test users, "
-            + "then try again.");
+            $"Sign-in timed out after {SignInTimeoutMinutes} minutes. If the Google "
+            + "page showed \"access_denied\", add your account under OAuth consent screen > "
+            + "Test users, then try again.");
         }
 
-        return FinishAuthorize(output);
+        return FinishAuthorize(output.ToString());
       }
     }
 
