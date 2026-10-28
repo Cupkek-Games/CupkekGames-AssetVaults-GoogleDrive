@@ -27,8 +27,16 @@ namespace CupkekGames.AssetVaults.GoogleDrive
   public class GoogleDriveSettings : ScriptableObject
   {
     [Header("Drive")]
-    [Tooltip("Folder inside your Drive that holds the pack archives. Created on first upload.")]
+    [Tooltip("Folder inside the signed-in account's own Drive that holds the pack archives. " +
+             "Created on first upload. Ignored when a shared folder id is set.")]
     [SerializeField] private string _remoteFolder = "AssetVault";
+
+    [Tooltip("The vault folder's Drive id: the end of its drive.google.com/drive/folders/<id> link. " +
+             "Set it and every account works in that one folder, so a team shares one vault: " +
+             "share the folder with them in Drive (Viewer to download, Editor to upload too). " +
+             "Empty: each account uses the folder named above in its own Drive, so only the " +
+             "account that uploaded sees the archives.")]
+    [SerializeField] private string _sharedFolderId = "";
 
     [Header("OAuth client (Google Cloud Console > Credentials > OAuth client ID > Desktop app)")]
     [Tooltip("Safe to commit. Google has no API to create this, so it is the one manual step.")]
@@ -77,6 +85,14 @@ namespace CupkekGames.AssetVaults.GoogleDrive
     public string RemoteFolder => string.IsNullOrWhiteSpace(_remoteFolder)
       ? "AssetVault"
       : _remoteFolder.Trim().Trim('/');
+
+    /// <summary>The shared vault folder's Drive id, or empty for a folder in each account's own Drive.</summary>
+    public string SharedFolderId => _sharedFolderId != null ? _sharedFolderId.Trim() : string.Empty;
+
+    public bool UsesSharedFolder => !string.IsNullOrEmpty(SharedFolderId);
+
+    /// <summary>How the vault folder is named in messages.</summary>
+    public string FolderLabel => UsesSharedFolder ? "the shared vault folder" : "'" + RemoteFolder + "'";
 
     public string ClientId => _clientId != null ? _clientId.Trim() : string.Empty;
     public string ClientSecret => _clientSecret != null ? _clientSecret.Trim() : string.Empty;

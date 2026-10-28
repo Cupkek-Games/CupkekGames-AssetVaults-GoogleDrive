@@ -17,6 +17,19 @@ If no browser tab appears, or the `127.0.0.1:53682` page stays blank: the link i
 
 **Open in Drive** (inspector, and the vault window's connection row) opens the vault folder in the Drive web UI. The folder is created by the first upload, so before that there is nothing to open.
 
+## A team's vault: the shared folder
+
+Without a **shared folder id**, the vault folder is a path in the signed-in account's own Drive. Each account then has its own vault: a teammate who signs in sees an empty folder in their Drive, not the archives you uploaded.
+
+To share one vault:
+
+1. In Drive, share the vault folder with each teammate's Google account: **Viewer** to download, **Editor** to upload too.
+2. Copy the folder's id (the end of its `drive.google.com/drive/folders/<id>` link) into the settings asset's **Shared Folder Id** and commit it. Every account now works in that folder, reached by its id (rclone's `root_folder_id`), whoever's Drive it lives in.
+3. While the OAuth consent screen is in **Testing** status, add each teammate under **OAuth consent screen → Test users**, or Google refuses their sign-in (`access_denied`).
+4. Each teammate presses **Download rclone** and **Authorize with Google** once on their own machine, signing in with their own account. Their token stays in their `UserSettings/`.
+
+This needs the `drive` scope: `drive.file` only sees files the app created for the signed-in account, so a teammate could not see your archives.
+
 ## Where the secrets go
 
 - **Client id and secret** live in the settings asset and are committed. RFC 8252 treats a desktop-app client secret as non-confidential, because it cannot be kept secret inside a distributed application, and Google issues them for exactly this flow. Rotate the client before making a repository public.

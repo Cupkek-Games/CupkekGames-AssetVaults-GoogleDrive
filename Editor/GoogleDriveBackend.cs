@@ -82,10 +82,12 @@ namespace CupkekGames.AssetVaults.GoogleDrive
     /// </summary>
     private string Remote(string objectName)
     {
-      string path = _settings.RemoteFolder;
+      // A shared folder is the remote's root (ROOT_FOLDER_ID); otherwise the
+      // folder sits in the signed-in account's own Drive.
+      string path = _settings.UsesSharedFolder ? string.Empty : _settings.RemoteFolder;
       if (!string.IsNullOrEmpty(objectName))
       {
-        path += "/" + objectName;
+        path = path.Length == 0 ? objectName : path + "/" + objectName;
       }
 
       return RemoteName + ":" + path;
@@ -98,7 +100,7 @@ namespace CupkekGames.AssetVaults.GoogleDrive
         throw new VaultException("Not authorised. Press Authorize in the vault settings.");
       }
 
-      return new Dictionary<string, string>
+      var environment = new Dictionary<string, string>
       {
         { "RCLONE_CONFIG_" + RemoteName + "_TYPE", "drive" },
         { "RCLONE_CONFIG_" + RemoteName + "_SCOPE", _settings.ScopeArgument },
@@ -106,6 +108,15 @@ namespace CupkekGames.AssetVaults.GoogleDrive
         { "RCLONE_CONFIG_" + RemoteName + "_CLIENT_SECRET", _settings.ClientSecret },
         { "RCLONE_CONFIG_" + RemoteName + "_TOKEN", token },
       };
+
+      // The folder is reached by its id, so it need not be in this account's
+      // own Drive: a folder shared with the account works the same.
+      if (_settings.UsesSharedFolder)
+      {
+        environment["RCLONE_CONFIG_" + RemoteName + "_ROOT_FOLDER_ID"] = _settings.SharedFolderId;
+      }
+
+      return environment;
     }
 
     private string Exe()
@@ -197,6 +208,23 @@ namespace CupkekGames.AssetVaults.GoogleDrive
       await Transfer(args, progress, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Moves one archive to the Drive trash (rclone's default for Drive), where
+    /// its owner can restore it for 30 days.
+    /// </summary>
+    public async Task DeleteAsync(string remoteName, CancellationToken ct)
+    {
+      var args = new List<string> { "deletefile", Remote(remoteName), "--drive-use-trash=true" };
+      try
+      {
+        await RcloneProcess.CaptureAsync(Exe(), args, ct, ConfigEnvironment()).ConfigureAwait(false);
+      }
+      catch (VaultException e)
+      {
+        throw Translate(e);
+      }
+    }
+
     private async Task Transfer(List<string> args, IProgress<TransferProgress> progress,
       CancellationToken ct)
     {
@@ -218,7 +246,7 @@ namespace CupkekGames.AssetVaults.GoogleDrive
     /// left in Testing status, which expires every refresh token after 7 days
     /// no matter which scope it carries. Name the fix, not the fault.
     /// </summary>
-    private static VaultException Translate(VaultException e)
+    private VaultException Translate(VaultException e)
     {
       if (e.Message.Contains("invalid_grant"))
       {
@@ -226,6 +254,24 @@ namespace CupkekGames.AssetVaults.GoogleDrive
           "Google sign-in has expired. Press Re-authorize in the vault settings (Set up). "
           + "This repeats every 7 days while the OAuth consent screen is in Testing status; "
           + "publish it (OAuth consent screen > Publishing status > In production) to stop that.",
+          e);
+      }
+
+      if (e.Message.Contains("access_denied"))
+      {
+        return new VaultException(
+          "Google refused the sign-in for this account. While the OAuth consent screen is in "
+          + "Testing status only its listed test users can sign in: add this account under "
+          + "OAuth consent screen > Test users, or publish the screen.",
+          e);
+      }
+
+      if (_settings.UsesSharedFolder
+          && (e.Message.Contains("notFound") || e.Message.Contains("File not found") || e.Message.Contains("404")))
+      {
+        return new VaultException(
+          "This account cannot see the shared vault folder (" + _settings.SharedFolderId + "). "
+          + "Its owner shares it with this account in Drive: Viewer to download, Editor to upload too.",
           e);
       }
 
@@ -245,6 +291,11 @@ namespace CupkekGames.AssetVaults.GoogleDrive
     /// </summary>
     public async Task<string> GetWebUrlAsync(CancellationToken ct)
     {
+      if (_settings.UsesSharedFolder)
+      {
+        return "https://drive.google.com/drive/folders/" + _settings.SharedFolderId;
+      }
+
       if (_folderId == null)
       {
         _folderId = await LookUpFolderIdAsync(ct).ConfigureAwait(false);

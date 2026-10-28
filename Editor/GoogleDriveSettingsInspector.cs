@@ -270,7 +270,7 @@ namespace CupkekGames.AssetVaults.GoogleDrive
     {
       _busy = true;
       StartPump();
-      Set(Outcome.Working, "Finding '" + settings.RemoteFolder + "' on Drive...");
+      Set(Outcome.Working, "Finding " + settings.FolderLabel + " on Drive...");
       try
       {
         var backend = new GoogleDriveBackend(settings, ProjectRoot);
@@ -278,7 +278,7 @@ namespace CupkekGames.AssetVaults.GoogleDrive
         if (url == null)
         {
           Set(Outcome.Failure,
-            $"'{settings.RemoteFolder}' does not exist on Drive yet; the first upload creates it.");
+            $"{settings.FolderLabel} does not exist on Drive yet; the first upload creates it.");
         }
         else
         {
@@ -303,7 +303,7 @@ namespace CupkekGames.AssetVaults.GoogleDrive
     {
       _busy = true;
       StartPump();
-      Set(Outcome.Working, "Listing " + settings.RemoteFolder + "...");
+      Set(Outcome.Working, "Listing " + settings.FolderLabel + "...");
       try
       {
         var backend = new GoogleDriveBackend(settings, ProjectRoot);
@@ -314,10 +314,10 @@ namespace CupkekGames.AssetVaults.GoogleDrive
         // An empty result is the normal state before the first push: the folder
         // is created by the first upload.
         Set(Outcome.Success, objects.Count == 0
-          ? $"Connected. '{settings.RemoteFolder}' is empty or not created yet; "
+          ? $"Connected. {settings.FolderLabel} is empty or not created yet; "
             + "the first push creates it."
           : $"Connected. {objects.Count} archive(s), "
-            + $"{AssetVaults.VaultStatus.Describe(total)} in '{settings.RemoteFolder}'.");
+            + $"{AssetVaults.VaultStatus.Describe(total)} in {settings.FolderLabel}.");
       }
       catch (Exception e)
       {

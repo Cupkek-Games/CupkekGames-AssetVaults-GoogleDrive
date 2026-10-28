@@ -1,7 +1,7 @@
 {
   "name": "com.cupkekgames.assetvaults.googledrive",
   "displayName": "CupkekGames Asset Vaults - Google Drive",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "CupkekGames",
     "url": "https://www.docs.cupkek.games"
@@ -17,6 +17,6 @@
     "CupkekGames"
   ],
   "dependencies": {
-    "com.cupkekgames.assetvaults": "0.7.0"
+    "com.cupkekgames.assetvaults": "0.8.0"
   }
 }
